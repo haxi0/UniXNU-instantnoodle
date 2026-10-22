@@ -7,7 +7,6 @@
 #include <kern/clock.h>
 #include <machine/machine_routines.h>
 #include <libkern/libkern.h>
-#include <IOKit/IOLib.h>
 #include <pexpert/pexpert.h>
 #include "Buttons.h"
 
@@ -51,7 +50,7 @@ static int wait_channel(volatile uint32_t *base)
     for (unsigned i = 0; i < 2000; ++i) {
         uint32_t status = rd(base, 8);
         if (status & 1) return status & 14 ? -1 : 0;
-        IODelay(1);
+        delay_for_interval(1, NSEC_PER_USEC);
     }
     return -1;
 }
@@ -162,7 +161,7 @@ static void platform_thread(void *arg __unused, wait_result_t result __unused)
         absolutetime_to_nanoseconds(mach_absolute_time() - start, &ns);
         if (reset && ns / NSEC_PER_SEC >= reset) {reset_bootloader(); reset = 0;}
         if (buttons != 1 && !reset) break;
-        IOSleep(10);
+        delay_for_interval(10, NSEC_PER_MSEC);
     }
     thread_terminate(current_thread());
 }

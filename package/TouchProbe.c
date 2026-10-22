@@ -29,7 +29,6 @@
 #include <mach/mach_types.h>
 #include <pexpert/pexpert.h>
 #include <sys/errno.h>
-#include <IOKit/IOLib.h>
 #include "S6SY761.h"
 #include "TouchPower.h"
 
@@ -67,7 +66,7 @@ sleep_us(uint32_t us)
 static void
 sleep_ms(uint32_t ms)
 {
-	IOSleep(ms);
+	delay_for_interval(ms, NSEC_PER_MSEC);
 }
 
 /* ---- pins (TLMM, SOUTH tile) --------------------------------------------------------------------- */
