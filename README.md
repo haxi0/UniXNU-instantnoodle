@@ -42,6 +42,15 @@ pipa's ramoops log reader (`scripts/read-pipa-log.py`, `package/linux-log`) is n
 
 The [requirements page](https://unixnu.com/guide/requirements) lists them. The firmware, package and boot image steps run on Linux; the kernel and userdata steps need macOS (the macOS build workflow of a UniXNU fork). On NixOS the CLANGPDB tool chain needs `CLANG_BIN` pointing at an unwrapped clang with lld and the llvm tools: the Nix wrapper's `--gcc-toolchain` is an unused argument there, an error under `-Werror`.
 
+The device repository includes `shell.nix` for reproducible tool selection on either development host:
+
+```sh
+cd unixnu
+nix-shell ../UniXNU-instantnoodle/shell.nix
+```
+
+This supplies Linux firmware, packaging, QEMU and host-check tools. XNU and APFS image construction still require macOS. The shell does not change system networking, udev rules or GitHub authentication.
+
 ## Stage 1 to 3: firmware, menu and payload volume
 
 ```sh
