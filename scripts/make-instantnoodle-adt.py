@@ -163,7 +163,9 @@ def main():
         *([node('psci', [('compatible', b'arm,psci-1.0\0'), ('method', args.psci_method.encode() + b'\0')])] if len(cpus) > 1 else []),
         # Suspend/resume is not implemented for this board. Use the original
         # root-domain policy input rather than allowing the CPU to park forever.
-        node('defaults', [('sleep-disabled', struct.pack('<I', 1))]),
+        node('defaults', [('sleep-disabled', struct.pack('<I', 1)),
+                          # UniXNU-qemu: BCM2837's 1024-vnode cap kills iPadOS processes; size for the 4 GiB owned window.
+                          ('kern.maxvnodes', struct.pack('<I', (4 << 30) // 65536 + 1024))]),
         node('options', []),
         # The original AppleImage4 panics without a product node.
         *([node('buttons', [('compatible', b'buttons\0'), ('device_type', b'buttons\0'),

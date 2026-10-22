@@ -54,6 +54,7 @@ def main():
             assert cpu['compatible'] == (b'arm,cortex-a55\0' if i < 4 else b'arm,cortex-a77\0')
             assert struct.unpack('<I', cpu['timebase-frequency'])[0] == 19200000
         assert children['psci']['method'] == b'smc\0'
+        assert struct.unpack('<I', children['defaults']['kern.maxvnodes'])[0] == 66560
         intc = children['arm-io']['children']['intc']
         assert struct.unpack('<4Q', intc['reg']) == (0xa00000, 0x10000, 0xa60000, 0x100000)
         assert struct.unpack('<Q', intc['redistributor-stride'])[0] == 0x20000

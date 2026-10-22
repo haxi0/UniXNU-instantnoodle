@@ -118,6 +118,8 @@ The sources below have host tests and a syntax check using older XNU 8796 header
 | CPU clocks | Three EPSS domains at 0x18591000; bounded LUT selection and disabled-domain refusal | `instantnoodle-cpufreq=1` |
 | Timed reset | IMEM bootloader reason at 0x146bf65c, followed by PSCI SYSTEM_RESET | `instantnoodle-autoreset=120` (30–3600 seconds after the board thread starts) |
 
+The ADT also carries UniXNU-qemu's `kern.maxvnodes = 66560` policy for the 4 GiB owned-memory window. The BCM2837 build's 1024 default is too small for the iPadOS process set. This prepares the later userland boot; it has not been tested on this phone.
+
 These flags are off by default. `offline-mobile-graphics-load=1 offline-legacy-register=1` in the board arguments invokes the board init hook after the original graphics family loads. Touch and key publication has no HID consumer until NativeHidInput and the display backend are linked. The current hook does not create a display service.
 
 The reset timer needs a running kernel thread. It cannot recover a hard hang. It writes only the volatile IMEM restart word. Persistent boot logging and Data persistence are not enabled; no write window on userdata is opened by this configuration.
