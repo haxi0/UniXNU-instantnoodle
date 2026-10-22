@@ -10,7 +10,7 @@ Device repository for the OnePlus 8 (instantnoodle, IN2010, SM8250), laid out li
 | --- | --- |
 | 1. UEFI | works: `fastboot boot` of the header v1 image, the Mu-Silicium DEBUG log on the panel |
 | 2. UniXNU menu | works with an empty ramdisk (2026-10-22); with no entry it falls through to the Silicium boot manager, which resets to the bootloader |
-| 3. Payload | not tried: needs the kernel |
+| 3. Payload | kernel built; boot-volume packaging and phone boot not tried |
 | 4–5. DarwinBoot, kernel entry | not tried |
 | 6. Storage and root | SM8250 probe build prepared; signed root and original storage ABI still required |
 
@@ -108,7 +108,7 @@ Read under Android (OxygenOS 11) and recovery, 2026-10-21 and 2026-10-22.
 
 ## Prepared hardware support
 
-The sources below have host tests and a syntax check using older XNU 8796 headers. They have **not** been compiled against UniXNU's XNU 10063 or tested on the phone. Success in the earlier iOS ports does not establish success here.
+The sources below pass host tests and compile and link against UniXNU's XNU 10063. Both kernel passes completed in [CI run 39821270506](https://github.com/haxi0/UniXNU/actions/runs/39821270506), including the original PMGR bridge; the job then stopped on a missing EFI packaging linker. The kernel artifact is valid, but none of this hardware code has been tested on the phone. Success in the earlier iOS ports does not establish success here.
 
 | Component | Preparation | Enable for a diagnostic run |
 | --- | --- | --- |
@@ -162,8 +162,8 @@ python3 scripts/check-qemu-esp.py ../unixnu/out/instantnoodle/tree
 
 ## Remaining gates
 
-1. Compile the prepared archives on the macOS runner. The archive builders are now enabled with `CONFIG_XNU_BUILD_ARCHIVES=y`.
-2. Run the kernel build twice before a phone test: `build-platform-power.py` requires the first prelinked kernel to bind the real PMGR bridge. The first-pass bridge is only a build stub.
+1. Complete EFI packaging and the real QEMU storage/display ABI checks. All board archives now compile and link with `CONFIG_XNU_BUILD_ARCHIVES=y`.
+2. Preserve the two-pass kernel build: `build-platform-power.py` requires the first prelinked kernel to bind the real PMGR bridge. Both passes have built successfully; the first-pass bridge alone is only a build stub.
 3. Qualify the original storage ABI and prepare owner keys, signed OS/SystemOS policies and a Data seed. The published tb128fu board references unpublished ABI/key inputs; it is a source reference, not a reproducible ready-made build.
 4. Build the CPU display backend and NativeHidInput against this kernel. Reuse the platform archive's touch state and call `instantnoodle_platform_init()` from the real display init, replacing the no-display hook.
 5. Test storage probes, input, clocks and reset in stages, then prepare the userdata image. Flashing and persistent logging require explicit approval.

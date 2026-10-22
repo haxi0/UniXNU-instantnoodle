@@ -31,7 +31,8 @@ candidate.parent.mkdir(parents=True, exist_ok=True)
 shutil.copyfile(kernel, candidate)
 shutil.copyfile(kernel.with_suffix('.json'), candidate.with_suffix('.json'))
 
-symbols = subprocess.check_output(['xcrun', 'nm', candidate], text=True)
+nm = shutil.which('llvm-nm')
+symbols = subprocess.check_output([nm, candidate] if nm else ['xcrun', 'nm', candidate], text=True)
 
 
 def symbol(name):
