@@ -12,7 +12,7 @@ Device repository for the OnePlus 8 (instantnoodle, IN2010, SM8250), laid out li
 | 2. UniXNU menu | works with an empty ramdisk (2026-10-22); with no entry it falls through to the Silicium boot manager, which resets to the bootloader |
 | 3. Payload | works: 203 MB header-v1 image accepted by fastboot and handed to XNU |
 | 4–5. DarwinBoot, kernel entry | confirmed: user saw entry probe bars and `Failed to mount root device` (2026-10-22) |
-| 6. Storage and root | SM8250 probe build prepared; signed root and original storage ABI still required |
+| 6. Storage and root | register probe passes on hardware; SMMU/DMA, disk reads and signed root publication remain |
 
 ## What is here
 
@@ -110,15 +110,17 @@ Read under Android (OxygenOS 11) and recovery, 2026-10-21 and 2026-10-22.
 
 ## Prepared hardware support
 
-The sources below pass host tests and compile and link against UniXNU's XNU 10063. [CI run 39823376112](https://github.com/haxi0/UniXNU/actions/runs/39823376112) passes the two-pass kernel, original PMGR bridge, EFI package and QEMU storage/display ABI checks. The no-root endpoint has also run on the phone. Touch, keys, clocks, reset and UFS remain untested under UniXNU. Success in the earlier iOS ports does not establish success here.
+The sources below pass host tests and compile and link against UniXNU's XNU 10063. [CI run 39823376112](https://github.com/haxi0/UniXNU/actions/runs/39823376112) passes the two-pass kernel, original PMGR bridge, EFI package and QEMU storage/display ABI checks. The no-root endpoint has also run on the phone. The UFS register probe also passes on hardware. Touch, keys, clocks, reset, SMMU takeover and disk reads remain untested under UniXNU. Success in the earlier iOS ports does not establish success here.
 
 | Component | Preparation | Enable for a diagnostic run |
 | --- | --- | --- |
-| NativeUfs | SM8250 GCC registers, compatible string, SMMU IDs 0xe0/0x4e0 with mask 0x400 | `native-ufs-probe=2` reads registers and panics with a report; `=10` adopts the controller and reads GPT/userdata, without writing storage |
+| NativeUfs | SM8250 GCC registers, compatible string, SMMU IDs 0xe0/0x4e0 with mask 0x400 | `native-ufs-probe=2` reads controller registers; `=7` reads SMMU mappings; `=10` adopts the controller and reads GPT/userdata, without writing storage |
 | Touch | S6SY761 over GPIO36/37; reset GPIO38; RPMh ldoc1/ldoa13; publishes the full contact set in NativeHidInput coordinates | `instantnoodle-touch=1` |
 | Keys | PM8150 power, GPIO6/7 volume keys over SPMI v5; debounce and release after bus errors | `instantnoodle-buttons=1` |
 | CPU clocks | Three EPSS domains at 0x18591000; bounded LUT selection and disabled-domain refusal | `instantnoodle-cpufreq=1` |
 | Timed reset | IMEM bootloader reason at 0x146bf65c, followed by PSCI SYSTEM_RESET | `instantnoodle-autoreset=120` (30–3600 seconds after the board thread starts) |
+
+Hardware UFS register probe (2026-10-22, `native-ufs-probe=2`): the supplied photo shows `hc_read=1`, `ver=00000300`, `hcs=0000000f` and `hce=00000001`. The GCC power/clock gate permitted controller reads, and the controller identifies as UFS HCI 3.0 with its enable bit set. This does not prove DMA or disk I/O. The photo is saved locally as `.cache/hardware/ufs-registers-2026-10-22.png`; `boot/ufs-registers-confirmed.img` preserves the tested image. Other small hexadecimal fields in the photo are not transcribed without clearer evidence.
 
 The ADT also carries UniXNU-qemu's `kern.maxvnodes = 66560` policy for the 4 GiB owned-memory window. The BCM2837 build's 1024 default is too small for the iPadOS process set. This prepares the later userland boot; it has not been tested on this phone.
 
@@ -164,9 +166,9 @@ python3 scripts/check-qemu-esp.py ../unixnu/out/instantnoodle/tree
 
 ## Remaining gates
 
-1. Run the prepared read-only `native-ufs-probe=2` image on the phone and capture its register report. `boot/boot.img` currently contains this probe, with the green CI kernel `ce9e96a4371d43297dd96bae30e0325e6065c0b379f3e4250802e6cefa13a7db`. It carries no Data image.
+1. Run the prepared read-only `native-ufs-probe=7` image and capture its SMMU report before attempting DMA/disk reads. `boot/boot.img` currently contains this probe, with the green CI kernel `ce9e96a4371d43297dd96bae30e0325e6065c0b379f3e4250802e6cefa13a7db`. It carries no Data image.
 2. Preserve the two-pass kernel build: `build-platform-power.py` requires the first prelinked kernel to bind the real PMGR bridge. Both passes have built successfully; the first-pass bridge alone is only a build stub.
-3. Qualify the original storage ABI and prepare owner keys, signed OS/SystemOS policies and a Data seed. The published tb128fu board references unpublished ABI/key inputs; it is a source reference, not a reproducible ready-made build.
+3. Bind the qualified original storage ABI and prepare owner keys, signed OS/SystemOS policies and a Data seed. The published tb128fu board references unpublished ABI/key inputs; it is a source reference, not a reproducible ready-made build.
 4. Build the CPU display backend and NativeHidInput against this kernel. Reuse the platform archive's touch state and call `instantnoodle_platform_init()` from the real display init, replacing the no-display hook.
 5. Test storage probes, input, clocks and reset in stages, then prepare the userdata image. Flashing and persistent logging require explicit approval.
 6. Adreno 650, QCA6390 PCIe/MHI Wi-Fi, Bluetooth, battery/charging and audio remain unported. Audio was explicitly deferred.
