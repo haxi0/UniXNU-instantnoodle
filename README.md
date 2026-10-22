@@ -1,6 +1,6 @@
 # UniXNU-instantnoodle
 
-> **Work in progress.** The empty-ramdisk firmware reaches the UniXNU menu. Kernel entry on the phone remains unconfirmed.
+> **Work in progress.** XNU reaches `Failed to mount root device` on the OnePlus 8. Storage/root publication and the iPadOS display/input stack remain unfinished.
 
 Device repository for the OnePlus 8 (instantnoodle, IN2010, SM8250), laid out like [UniXNU-sheng](https://github.com/UniXNU/UniXNU-sheng). It started as a fork of [UniXNU-pipa](https://github.com/xVanTuring/UniXNU-pipa) (Xiaomi Pad 6, the same SoC). Firmware: [uefi-instantnoodle](https://github.com/haxi0/uefi-instantnoodle), branch `instantnoodle`, a fork of [uefi-sheng](https://github.com/UniXNU/uefi-sheng).
 
@@ -10,8 +10,8 @@ Device repository for the OnePlus 8 (instantnoodle, IN2010, SM8250), laid out li
 | --- | --- |
 | 1. UEFI | works: `fastboot boot` of the header v1 image, the Mu-Silicium DEBUG log on the panel |
 | 2. UniXNU menu | works with an empty ramdisk (2026-10-22); with no entry it falls through to the Silicium boot manager, which resets to the bootloader |
-| 3. Payload | 203 MB boot image built and accepted by fastboot; payload discovery on the phone unconfirmed |
-| 4–5. DarwinBoot, kernel entry | RAM attempts show startup text then reset; last-frame evidence still needed |
+| 3. Payload | works: 203 MB header-v1 image accepted by fastboot and handed to XNU |
+| 4–5. DarwinBoot, kernel entry | confirmed: user saw entry probe bars and `Failed to mount root device` (2026-10-22) |
 | 6. Storage and root | SM8250 probe build prepared; signed root and original storage ABI still required |
 
 ## What is here
@@ -82,7 +82,7 @@ fastboot boot out/instantnoodle/boot/boot.img
 
 The platform seed is any nonzero 64-bit value kept for this phone, for example from `openssl rand -hex 8`. It never goes into this repository.
 
-Current RAM attempts (2026-10-22): fastboot reports `Booting OKAY`, then the user sees startup text and a reboot. This does not distinguish UEFI output from XNU output. The payload menu timeout is now 30 seconds to expose the reset stage; its value was verified inside the FAT volume. No partition was flashed and the hardware-action flags remain off.
+Kernel-entry milestone (2026-10-22): the user saw the green/blue/pink entry bars and `Failed to mount root device` after the RAM boot. That confirms the real phone reaches the expected no-root endpoint. The confirmed image used kernel `dbdee76f3234c75f8d1011ec2f4dc4c328a21187ba96f6ae113016b86f5e5ba8`. The payload menu timeout is 30 seconds, verified inside its FAT volume. No partition was flashed and the touch, keys and clock flags remained off. `boot/kernel-entry-confirmed.img` preserves that image locally.
 
 Expected bring-up endpoint: DarwinBoot hands over and the kernel reaches `Failed to mount root device`. NativeUfs is compiled in probe-only mode and cannot publish a root device. This is preparation for hardware tests, not an iPadOS home-screen image.
 
@@ -105,12 +105,12 @@ Read under Android (OxygenOS 11) and recovery, 2026-10-21 and 2026-10-22.
 ## Known risks
 
 - **userdata.** The root image is written with `fastboot flash userdata`, which erases Android's data partition.
-- **Large ramdisk handover.** ABL accepts the 203 MB header-v1 image, but the payload has not reached a visible UniXNU menu on the phone.
+- **Hardware qualification.** ABL, the large payload and kernel entry work. UFS, input, clocks, reset and a working iPadOS root still need separate hardware tests.
 - **Vendor drivers.** kebab's vendor driver set runs as is; `AcpiPlatform.efi` fails to start (status 1) without visible effect so far.
 
 ## Prepared hardware support
 
-The sources below pass host tests and compile and link against UniXNU's XNU 10063. Both kernel passes completed in [CI run 39821270506](https://github.com/haxi0/UniXNU/actions/runs/39821270506), including the original PMGR bridge; the job then stopped on a missing EFI packaging linker. The kernel artifact is valid, but none of this hardware code has been tested on the phone. Success in the earlier iOS ports does not establish success here.
+The sources below pass host tests and compile and link against UniXNU's XNU 10063. [CI run 39823376112](https://github.com/haxi0/UniXNU/actions/runs/39823376112) passes the two-pass kernel, original PMGR bridge, EFI package and QEMU storage/display ABI checks. The no-root endpoint has also run on the phone. Touch, keys, clocks, reset and UFS remain untested under UniXNU. Success in the earlier iOS ports does not establish success here.
 
 | Component | Preparation | Enable for a diagnostic run |
 | --- | --- | --- |
@@ -154,7 +154,7 @@ On macOS, after selecting this device and installing QEMU:
 python3 out/instantnoodle/tree/scripts/qualify-kernel-abi.py
 ```
 
-The audit reports and raw observations are exported to `out/instantnoodle/kernel/abi/` for the kernel artifact. They qualify the original class layout, not physical storage, the panel, or successful iPadOS startup. `build-darwinboot-efi.py` builds the standalone loader QEMU needs; it respects `CLANG_BIN` on NixOS and saves its build log. EFI compilation and isolated ESP staging pass locally. The two-pass kernel also boots under local QEMU and passes the original framebuffer class audit (358 slots, 0x18a0 bytes, nine abstract leaves). Storage qualification still needs the macOS build records and its live QEMU check.
+The audit reports and raw observations are exported to `out/instantnoodle/kernel/abi/` for the kernel artifact. The current workflow audits its pre-build candidate, then performs its normal final kernel pass; the reports record the exact observed candidate hash. They must not be presented as a runtime test of that later binary. They qualify the original class layout, not physical storage, the panel, or successful iPadOS startup. `build-darwinboot-efi.py` builds the standalone loader QEMU needs; it respects `CLANG_BIN` on NixOS and saves its build log. EFI compilation and isolated ESP staging pass locally. The two-pass kernel also boots under local QEMU and passes the original framebuffer class audit (358 slots, 0x18a0 bytes, nine abstract leaves). CI also passes the live storage audit: native 4 KiB translation and the 190-slot original block-storage class. These are class ABI observations, not physical UFS tests.
 
 To repeat the staging check on Linux after building the package and standalone DarwinBoot:
 
@@ -164,7 +164,7 @@ python3 scripts/check-qemu-esp.py ../unixnu/out/instantnoodle/tree
 
 ## Remaining gates
 
-1. Complete EFI packaging and the real QEMU storage/display ABI checks. All board archives now compile and link with `CONFIG_XNU_BUILD_ARCHIVES=y`.
+1. Run the prepared read-only `native-ufs-probe=2` image on the phone and capture its register report. `boot/boot.img` currently contains this probe, with the green CI kernel `ce9e96a4371d43297dd96bae30e0325e6065c0b379f3e4250802e6cefa13a7db`. It carries no Data image.
 2. Preserve the two-pass kernel build: `build-platform-power.py` requires the first prelinked kernel to bind the real PMGR bridge. Both passes have built successfully; the first-pass bridge alone is only a build stub.
 3. Qualify the original storage ABI and prepare owner keys, signed OS/SystemOS policies and a Data seed. The published tb128fu board references unpublished ABI/key inputs; it is a source reference, not a reproducible ready-made build.
 4. Build the CPU display backend and NativeHidInput against this kernel. Reuse the platform archive's touch state and call `instantnoodle_platform_init()` from the real display init, replacing the no-display hook.
