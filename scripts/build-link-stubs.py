@@ -13,8 +13,8 @@ subprocess.run(['xcrun', '--sdk', 'iphoneos', 'clang', '-arch', 'arm64', '-mkern
                 '-Os', '-Wall', '-Werror', '-c', source, '-o', obj], check=True)
 archive.unlink(missing_ok=True)
 subprocess.run(['xcrun', 'ar', 'rcs', archive, obj], check=True)
-# Build hardware glue against the compile record produced by UniXNU's bootstrap pass.
-record = json.loads((ROOT / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/osfmk/DEVELOPMENT/startup.o.json').read_text().strip().rstrip(','))
+# Board glue uses BSD libkern/sys headers, which conflict with MACH_KERNEL_PRIVATE declarations.
+record = json.loads((ROOT / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/bsd/DEVELOPMENT/bsd_init.o.json').read_text().strip().rstrip(','))
 for name in ('Platform', 'CpuFreq', 'TouchProbe', 'TouchState'):
     source = ROOT / f'kits/instantnoodle/{name}.c'
     obj = out / f'{name}.o'
