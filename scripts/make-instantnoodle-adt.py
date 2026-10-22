@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Generate the minimal pipa hardware Apple-format DT for the first boot.
+"""Generate the minimal instantnoodle (OnePlus 8) hardware Apple-format DT for the first boot.
 
 The tree follows make-sheng-adt.py of UniXNU-sheng (the same required nodes
-and properties) with the Xiaomi Pad 6 SM8250 values from public sources:
+and properties) with the SM8250 values from public sources (the script is UniXNU-pipa's, the same SoC):
 
   - GICv3 distributor 0x17a00000/0x10000, redistributor 0x17a60000/0x100000
     for eight cores, stride 0x20000 (sm8250.dtsi, Linux mainline); arm-io
@@ -12,7 +12,7 @@ and properties) with the Xiaomi Pad 6 SM8250 values from public sources:
     Gold and Prime (Cortex-A77), numbered in Affinity1 (sm8250.dtsi)
   - DRAM base 0x80000000; the size is passed in from board.toml.
 
-None of these values has been observed through UniXNU on a pipa yet. The
+The GIC, cores and timebase agree with the OnePlus 8's live device tree. The
 UFS node names the SM8250 controller, so a driver written for another SoC's
 UFS registers does not attach to it.
 """
@@ -70,7 +70,7 @@ def empty_nvram_proxy():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path,
-                        default=ROOT / 'build/pipa/boot/kernel.macho.adt')
+                        default=ROOT / 'build/instantnoodle/boot/kernel.macho.adt')
     parser.add_argument('--dram-size', type=lambda value: int(value, 0), required=True,
                         help='Actual observed DRAM size, e.g. 0x1fbb00000')
     parser.add_argument('--owned-memory-size', type=lambda value: int(value, 0), default=None,
@@ -82,7 +82,7 @@ def main():
     parser.add_argument('--chip-id', type=lambda value: int(value, 16), default=None)
     parser.add_argument('--ipad-identity', action='store_true',
                         help='/product and /buttons describe an iPad-class device without a Home button (MobileGestalt reads these from the tree); '
-                             'values follow the unchanged iPad7,1 tree, the button set is pipa\'s')
+                             'values follow the unchanged iPad7,1 tree, the button set is the OnePlus 8\'s')
     parser.add_argument('--cpu-regs', default='0',
                         help='Comma-separated CPU MPIDR affinity values (the /cpus reg of each core); the first is the running boot CPU. '
                              'SM8250 numbers its cores 0x000..0x700 in Affinity1 (sm8250.dtsi). More than one adds /psci')
@@ -118,10 +118,10 @@ def main():
     tree = node('device-tree', [
         # hw.product/hw.machine/hw.target come from the root 'model'/'target-type' (IODTPlatformExpert);
         # libMobileGestalt prefix-matches hw.product against iPhone/iPod/iPad, so the iPad identity needs both here.
-        ('model', b'iPad7,1\0' if args.ipad_identity else b'pipa-first-boot\0'),
+        ('model', b'iPad7,1\0' if args.ipad_identity else b'instantnoodle-first-boot\0'),
         *([('target-type', b'J120\0')] if args.ipad_identity else []),
-        # Root compatible strings of the board DT (xiaomi,pipa / qcom,sm8250).
-        ('compatible', b'xiaomi,pipa\0qcom,sm8250\0'),
+        # Root compatible strings of the board DT (oneplus,instantnoodle / qcom,sm8250).
+        ('compatible', b'oneplus,instantnoodle\0qcom,sm8250\0'),
         ('#address-cells', struct.pack('<I', 2)),
         ('#size-cells', struct.pack('<I', 2)),
     ], [
@@ -167,11 +167,11 @@ def main():
         node('options', []),
         # The original AppleImage4 panics without a product node.
         *([node('buttons', [('compatible', b'buttons\0'), ('device_type', b'buttons\0'),
-                            # No 'menu' entry: pipa has no Home button. 2 = the non-mechanical answer BSPlatform passes through.
+                            # No 'menu' entry: the OnePlus 8 has no Home button. 2 = the non-mechanical answer BSPlatform passes through.
                             ('button-names', b'hold\0voldown\0volup\0'),
                             ('home-button-type', struct.pack('<I', 2))])] if args.ipad_identity else []),
-        node('product', [('product-name', b'iPad Pro (12.9-inch) (2nd generation)\0' if args.ipad_identity else b'Xiaomi Pad 6\0'),
-                         ('model', b'xiaomi,pipa\0'),
+        node('product', [('product-name', b'iPad Pro (12.9-inch) (2nd generation)\0' if args.ipad_identity else b'OnePlus 8\0'),
+                         ('model', b'oneplus,instantnoodle\0'),
                          *([('product-description', b'iPad Pro (12.9-inch) (2nd generation)\0'),
                             ('artwork-device-idiom', b'pad\0'),
                             ('artwork-device-subtype', struct.pack('<I', 2732)),
@@ -194,7 +194,7 @@ def main():
     ])
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(tree)
-    print(f'pipa ADT: {len(tree)} bytes, dram {args.dram_size:#x}, cpus {len(cpus)}, timebase {TIMEBASE}')
+    print(f'instantnoodle ADT: {len(tree)} bytes, dram {args.dram_size:#x}, cpus {len(cpus)}, timebase {TIMEBASE}')
 
 
 if __name__ == '__main__':

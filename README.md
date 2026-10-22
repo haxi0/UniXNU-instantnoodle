@@ -1,114 +1,109 @@
-# UniXNU-pipa
+# UniXNU-instantnoodle
 
-> **Work in progress.** Prepared without the tablet; nothing here has run on a pipa yet.
+> **Work in progress.** The firmware reaches the UniXNU menu on the phone; XNU has not run yet.
 
-Device repository for the Xiaomi Pad 6 (pipa, SM8250), laid out like [UniXNU-sheng](https://github.com/UniXNU/UniXNU-sheng). Firmware: [uefi-pipa](https://github.com/xVanTuring/uefi-pipa), branch `pipa`, a fork of [uefi-sheng](https://github.com/UniXNU/uefi-sheng) whose upstream Mu-Silicium tree already carries `pipaPkg`.
+Device repository for the OnePlus 8 (instantnoodle, IN2010, SM8250), laid out like [UniXNU-sheng](https://github.com/UniXNU/UniXNU-sheng). It started as a fork of [UniXNU-pipa](https://github.com/xVanTuring/UniXNU-pipa) (Xiaomi Pad 6, the same SoC). Firmware: [uefi-instantnoodle](https://github.com/haxi0/uefi-instantnoodle), branch `instantnoodle`, a fork of [uefi-sheng](https://github.com/UniXNU/uefi-sheng).
 
-**State: prepared without the tablet. Nothing here has run on a pipa.** The static checks pass (see [Checks](#checks)); every hardware value names its public source.
+## State
+
+| Stage | State |
+| --- | --- |
+| 1. UEFI | works: `fastboot boot` of the header v1 image, the Mu-Silicium DEBUG log on the panel |
+| 2. UniXNU menu | works with an empty ramdisk (2026-10-22); with no entry it falls through to the Silicium boot manager, which resets to the bootloader |
+| 3. Payload | not tried: needs the kernel |
+| 4–5. DarwinBoot, kernel entry | not tried |
+| 6. Storage and root | needs NativeUfs for SM8250 |
 
 ## What is here
 
 | File | Contents |
 | --- | --- |
 | `board.toml` | Board, IPSW, firmware, payload and ADT settings |
-| `configs/pipa_defconfig` | Kernel configuration of the first image |
-| `scripts/build-arm-driver.py` | The generic driver archive builder, copied unchanged from UniXNU-sheng |
-| `scripts/build-platform-power.py`, `package/ShengPlatformPower.cpp` | The original-PMGR bridge of UniXNU-sheng, which accesses no hardware; the builder takes this board's previous kernel as its reference |
-| `scripts/make-pipa-adt.py` | Apple device tree for SM8250: GICv3 0x17a00000/0x17a60000, stride 0x20000, Cortex-A55/A77 cores, 19.2 MHz timebase |
-| `scripts/check-pipa.py` | Firmware preflight: UniXNU integration, FD and stack against the memory map, vendor inputs, splash region |
-| `scripts/patch-xnu-entry-probe.py`, `scripts/xnu-panic-screen.c` | Copied unchanged from UniXNU-sheng; the payload uses them for the on-screen panic text (there is no UART) |
+| `configs/instantnoodle_defconfig` | Kernel configuration of the first image (pipa's) |
+| `scripts/make-instantnoodle-adt.py` | Apple device tree for SM8250: GICv3 0x17a00000/0x17a60000, stride 0x20000, Cortex-A55/A77 cores, 19.2 MHz timebase |
+| `scripts/check-instantnoodle.py` | Firmware preflight: UniXNU integration, FD and stack against the memory map, vendor inputs, splash region |
+| `scripts/build-arm-driver.py`, `scripts/build-platform-power.py`, `package/ShengPlatformPower.cpp`, `scripts/patch-xnu-entry-probe.py`, `scripts/xnu-panic-screen.c` | Copied unchanged from UniXNU-sheng through UniXNU-pipa |
 
-`uefi-pipa` changes on top of uefi-sheng:
+pipa's ramoops log reader (`scripts/read-pipa-log.py`, `package/linux-log`) is not carried: it reads a pipa Linux kernel's pstore.
+
+`uefi-instantnoodle` changes on top of uefi-sheng:
 
 | File | Change |
 | --- | --- |
-| `Platforms/Xiaomi/pipaPkg/pipa.dsc` | UniXNU, UniXNUDxe, the ramdisk block device driver, DarwinBoot, UniXNULib and FdtLib |
-| `Platforms/Xiaomi/pipaPkg/pipa.fdf` | UniXNU and UniXNUDxe in the firmware volume |
-| `Platforms/Xiaomi/pipaPkg/Include/DXE.inc` | `ShengBootMemoryDxe` (publishes the boot image ramdisk, the payload volume, as a block device; every range comes from the device tree, so the shengPkg driver serves pipa unchanged) and DarwinBoot |
-| `Resources/Configs/pipa.toml` | The boot image base, offsets and page size written out (the mkbootimg defaults upstream packs pipa with) |
+| `Platforms/OnePlus/instantnoodlePkg/` | Mu-Silicium's OnePlus 8T port (`kebabPkg`: Kona, the same 1080x2400 frame buffer and FD layout) under the OnePlus 8's name; vendor drivers (`Binaries/kebab`) and ACPI tables (`kebab/AcpiTables.inf`) unchanged |
+| `instantnoodle.dsc`, `instantnoodle.fdf` | UniXNU, UniXNUDxe, the ramdisk block device driver, DarwinBoot, UniXNULib and FdtLib, as in pipa |
+| `Include/DXE.inc` | `ShengBootMemoryDxe` (publishes the boot image ramdisk as a block device) and DarwinBoot |
+| `Resources/Configs/instantnoodle.toml` | kebab's, with the boot image base, offsets and page size written out (mkbootimg defaults, header v1, page 2048: what ABL accepts) |
+| `Resources/DTBs/instantnoodle.dtb` | The first tree of the stock boot image's DTB (kona v2.1, msm-id 0x164 0x20001), the one ABL picks on this phone |
 
-The upstream vendor driver set stays as it is; upstream Mu-Silicium lists display, internal storage and side buttons as working on pipa with it.
+`ENABLE_SECUREBOOT` is `0` in `board.toml`: with it on, SecurityStubDxe never installs the Security Arch protocol on Kona, DxeCore asserts (`DxeMain.c(581)`) and DarwinBoot is never dispatched.
 
 ## Host tools
 
-The unixnu driver needs Python 3.11 or newer and the tools of the [requirements page](https://unixnu.com/guide/requirements). On this Mac these are missing:
-
-```sh
-brew install llvm lld cmake ninja mtools dtc
-```
-
-Homebrew ships `lld-link` in `lld`, separate from `llvm`; the CLANGPDB tool chain needs both. Python 3.11 comes from pyenv: `pyenv local 3.11.15` in the UniXNU checkout covers the driver and every script it starts there.
+The [requirements page](https://unixnu.com/guide/requirements) lists them. The firmware, package and boot image steps run on Linux; the kernel and userdata steps need macOS (the macOS build workflow of a UniXNU fork). On NixOS the CLANGPDB tool chain needs `CLANG_BIN` pointing at an unwrapped clang with lld and the llvm tools: the Nix wrapper's `--gcc-toolchain` is an unused argument there, an error under `-Werror`.
 
 ## Stage 1 to 3: firmware, menu and payload volume
 
 ```sh
-export UNIXNU_UEFI=$PWD/uefi-pipa      # the preflight reads the checkout from here
-cd UniXNU                              # cloned beside this repository
+export UNIXNU_UEFI=$PWD/uefi-instantnoodle   # the preflight reads the checkout from here
+cd UniXNU                                    # cloned beside this repository
 git submodule update --init --recursive
 
-./unixnu fetch -D ../UniXNU-pipa
-./unixnu build package -D ../UniXNU-pipa
-./unixnu build firmware -D ../UniXNU-pipa
-./unixnu bootimg -D ../UniXNU-pipa --dtb "$UNIXNU_UEFI/Resources/DTBs/pipa.dtb" --ramdisk none
+./unixnu defconfig instantnoodle_defconfig -D ../UniXNU-instantnoodle
+./unixnu fetch
+./unixnu build package
+./unixnu build firmware --uefi "$UNIXNU_UEFI"
+./unixnu bootimg --uefi "$UNIXNU_UEFI" --dtb "$UNIXNU_UEFI/Resources/DTBs/instantnoodle.dtb" --ramdisk none
 
-fastboot boot out/pipa/boot/boot.img
+fastboot boot out/instantnoodle/boot/boot.img
 ```
 
-`fastboot boot` writes nothing to the tablet. Expected: the Mu-Silicium boot log, then the UniXNU menu with its built-in configuration. A firmware stall leaves the tablet in the bootloader; start the same image again.
+`fastboot boot` writes nothing to the phone. After a reboot the OnePlus 8's bootloader often needs the USB cable replugged before fastboot answers.
 
 ## Stage 4 and 5: kernel entry
 
-`configs/pipa_defconfig` builds the generic kernel path only: CPU, GIC, timer, the device-tree platform expert, the source corecrypto and pthread providers and NativeAES. Storage, Data, display and the owner root chain stay out until their inputs exist (see the file).
-
-A first kernel build from a clean tree needs the bootstrap pass of [UniXNU#5](https://github.com/UniXNU/UniXNU/pull/5) ([UniXNU#4](https://github.com/UniXNU/UniXNU/issues/4)), which UniXNU's main has.
-
 ```sh
-export UNIXNU_IPSW=$PWD/out/ipsw/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw   # a local copy of [ipsw] url
-./unixnu defconfig pipa_defconfig -D ../UniXNU-pipa
-./unixnu ipsw fetch -D ../UniXNU-pipa
-./unixnu build kernel -D ../UniXNU-pipa
+./unixnu ipsw fetch
+./unixnu build kernel                        # macOS only
 
-./unixnu build payload -D ../UniXNU-pipa --unique-chip-id <16 hex digits>
-./unixnu bootimg -D ../UniXNU-pipa --dtb "$UNIXNU_UEFI/Resources/DTBs/pipa.dtb"
-fastboot boot out/pipa/boot/boot.img
+./unixnu build payload --unique-chip-id <16 hex digits>
+./unixnu bootimg --uefi "$UNIXNU_UEFI" --dtb "$UNIXNU_UEFI/Resources/DTBs/instantnoodle.dtb"
+fastboot boot out/instantnoodle/boot/boot.img
 ```
 
-The platform seed is any nonzero 64-bit value kept for this tablet, for example from `openssl rand -hex 8`; `.cache/platform-seed` holds the one of this checkout.
+The platform seed is any nonzero 64-bit value kept for this phone, for example from `openssl rand -hex 8`. It never goes into this repository.
 
-On a new tree the PMGR bridge has no reference kernel yet: the first `build kernel` links a no-op in its place and says so, and the second links the bridge.
+Expected, as on pipa: DarwinBoot hands over, the entry probe bars appear at the top of the screen, and the panic screen shows `Failed to mount root device`, as there is no storage driver yet.
 
-Expected: DarwinBoot hands over, the entry probe bars (green, blue, magenta) appear at the top of the screen, and the panic screen shows `Failed to mount root device`, as there is no storage driver yet. XNU's video console does not draw the kernel log despite `-v`. The same kernel configuration reaches that point on the QEMU board of [UniXNU-qemu](https://github.com/xVanTuring/UniXNU-qemu).
+## Values taken from the phone
 
-## Values taken from the tablet
-
-Read under Android 14 (HyperOS 2.0.20) with `android-devinfo` on 2026-10-21; the firmware partitions were not copied yet.
+Read under Android (OxygenOS 11) and recovery, 2026-10-21 and 2026-10-22.
 
 | Value | Read | In this repository |
 | --- | --- | --- |
-| DRAM banks | 0x80000000+0x37700000, 0xc0000000+0x1c0000000, 0x800000000+0x200000000 (15.87 GiB): the added 8 GiB is a bank of its own at 32 GiB | `dram_size = 0x980000000`, base to the end of the last bank |
-| Free memory for DarwinBoot's 4 GiB | 0xffc20000..0x27fffffff (6 GiB) in the second bank, 8 GiB in the third | `owned_memory_size = 0x100000000` |
-| userdata | sda34, LBA 0x293000..0x1d387fa, 4096-byte blocks (106.6 GiB); the GPT agrees with sysfs | `[userdata]`; `unixnu build userdata --dry-run` passes |
-| Storage | SK hynix HN8T05DEHKX073 (UFS 3.1), ufshc 0x1d84000, 6 LUNs | for NativeUfs |
-| Boot image header of the stock `boot` | header v3, page 4096 (with `vendor_boot`, header v3); slot `_b` active | the firmware image uses header v1, page 2048, as Mu-Silicium packs pipa |
-| CPUs, GIC | MPIDR 0x000..0x700 (four Cortex-A55, four Cortex-A77), GICv3 0x17a00000/0x17a60000 | as in `make-pipa-adt.py` |
-| Touch | Novatek `NVT-ts-spi` on the GENI SPI at 0x990000, 9.6 MHz, interrupt TLMM 39; Android reports 0..17999 x 0..28799 | for the touch driver |
-| Panel | `mdss_dsi_m82_36_02_0a_dual_dphy_video` (dual DSI, video mode), 1800x2880, 120 Hz; `cont_splash_region` 0x9c000000+0x2300000 | the frame buffer of SimpleFbDxe |
-| GPU | Adreno 650v3, chip ID 0x06050002 | |
+| DRAM banks | 0x80000000+0x3bb00000, 0xc0000000+0xc0000000, 0x180000000+0x100000000 (8 GiB) | `dram_size = 0x200000000`, base to the end of the last bank |
+| userdata | sda23 on LUN 0, LBA 4133800..30513146, 4096-byte blocks | `[userdata]` |
+| Boot image of the stock `boot` | header v2, page 4096; slot `_b` | the firmware image uses header v1, page 2048 |
+| CPUs, GIC | four Cortex-A55, four Cortex-A77, GICv3 0x17a00000/0x17a60000 | as in `make-instantnoodle-adt.py` |
+| CPU frequency | EPSS 0x18591000, domains cpu0-3, cpu4-6, cpu7 | for a cpufreq driver |
+| Touch | Samsung S6SY761 at 0x48 on the I2C of gpio36/37 (SE13), reset gpio38, interrupt gpio39; rails ldoc1 1.8 V, ldoa13 3.008 V | for the touch driver |
+| Keys | power: PM8150 PON 0x0800 (KPDPWR); volume up/down: PM8150 GPIO6/GPIO7 (0xc500/0xc600); SPMI arbiter v5 at 0xc440000 | for a key driver |
+| Panel | 1080x2400, `cont_splash_region` 0x9c000000 | the frame buffer of SimpleFbDxe |
+| GPU | Adreno 650 | |
 
 ## Known risks
 
-- **Firmware volume size.** The vendor drivers are 4.8 MiB before compression and the FD is 3 MiB. If UniXNU does not fit, the EDK II build stops. Then either drop vendor drivers that UniXNU does not need (USB, charger) the way sheng's `SHENG_VENDOR_HW = 0` does, or grow the FD into the 576 KiB gap below the UEFI stack (`pipa.toml` and the "UEFI FD" descriptor together).
-- **Vendor drivers and the panel.** On sheng the vendor clock stack blanked the panel; upstream reports a working display on pipa, but not together with UniXNU.
-- **ABL acceptance** of a 192 MiB ramdisk in a header v1 image is unverified on pipa; the stock boot image is header v3.
-- **userdata.** A later root image is written with `fastboot flash userdata`, which erases Android's data partition.
+- **userdata.** The root image is written with `fastboot flash userdata`, which erases Android's data partition.
+- **ABL acceptance** of a large ramdisk in a header v1 image is unverified on this phone.
+- **Vendor drivers.** kebab's vendor driver set runs as is; `AcpiPlatform.efi` fails to start (status 1) without visible effect so far.
 
 ## Next steps
 
-1. NativeUfs for SM8250: the compatible, GCC offsets from `gcc-sm8250.c`, SMMU stream 0x0e0, the DMA window.
-2. Touch: NT36532 over GENI SPI with SM8250 QUP, GCC and TLMM constants (`TouchBoard.h` of sheng is the template).
-3. Display, Data and boot progress: the legacy display archive and the boot progress page live in UniXNU-sheng's package together with sheng board probes; they need separating, and the boot progress page needs the owner root chain.
+1. Kernel through the macOS build workflow, then the payload and stages 4–5.
+2. NativeUfs for SM8250: GCC offsets from `gcc-sm8250.c` in place of the SM8550 ones.
+3. Touch (S6SY761), keys (PM8150 PON and GPIO) and EPSS cpufreq as UniXNU drivers.
 4. GPU: Adreno 650 needs its own GMU, HFI and PM4 work.
 
-## License
+## Credits and license
 
-BSD-2-Clause-Patent. See [LICENSE](LICENSE). `make-pipa-adt.py` is derived from `make-sheng-adt.py` of UniXNU-sheng; `build-arm-driver.py` and the two panic-screen files are copies from it. `ShengPlatformPower.cpp` comes from it under MIT (its SPDX header).
+BSD-2-Clause-Patent. See [LICENSE](LICENSE). Forked from UniXNU-pipa by xVanTuring; `make-instantnoodle-adt.py` is derived from its `make-pipa-adt.py`, itself derived from `make-sheng-adt.py` of UniXNU-sheng. `build-arm-driver.py` and the two panic-screen files are copies from UniXNU-sheng. `ShengPlatformPower.cpp` comes from it under MIT (its SPDX header). The firmware port is Mu-Silicium's `kebabPkg`.
