@@ -128,6 +128,27 @@ python3 scripts/check-storage.py ../unixnu/drivers/NativeUfs
 
 `CC` and `CXX` override the host compilers. The storage checks stage the patch in a temporary directory, test SMMU conflicts/reuse, both SoC constants, root publication ordering and UFS completion handling, and refuse a changed patch base. The board checks test contact decoding and bounds, key masks, EPSS tables, malformed command databases, and the generated eight-core ADT. Neither script accesses the phone.
 
+## Original class ABI checks under QEMU
+
+These helpers come from [UniXNU-qemu](https://github.com/xVanTuring/UniXNU-qemu), under BSD-2-Clause-Patent. They observe the original IOStorageFamily and IOMobileGraphicsFamily classes in a real QEMU guest. They do not replace runtime evidence with guessed metadata. `qemu_esp.py` uses this board's unmodified kernel with a separate one-core QEMU device tree and a public test identity. It never copies the phone payload, Data seed or private platform seed.
+
+On macOS, after selecting this device and installing QEMU:
+
+```sh
+./unixnu build kernel
+./unixnu build kernel              # bind the original PMGR bridge using the first candidate
+./unixnu build package
+python3 out/instantnoodle/tree/scripts/qualify-kernel-abi.py
+```
+
+The audit reports and raw observations are exported to `out/instantnoodle/kernel/abi/` for the kernel artifact. They qualify the original class layout, not physical storage, the panel, or successful iPadOS startup. `build-darwinboot-efi.py` builds the standalone loader QEMU needs; it respects `CLANG_BIN` on NixOS and saves its build log. EFI compilation and isolated ESP staging have passed locally; the runtime ABI checks still need a compiled kernel and macOS build records.
+
+To repeat the staging check on Linux after building the package and standalone DarwinBoot:
+
+```sh
+python3 scripts/check-qemu-esp.py ../unixnu/out/instantnoodle/tree
+```
+
 ## Remaining gates
 
 1. Compile the prepared archives on the macOS runner. The archive builders are now enabled with `CONFIG_XNU_BUILD_ARCHIVES=y`.
