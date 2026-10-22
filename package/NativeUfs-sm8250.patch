@@ -56,7 +56,7 @@ index 5d11663..22758d0 100644
  // gcc_ufs_phy_ahb_clk and gcc_aggre_ufs_phy_axi_clk set hwcg_bit=1 in gcc-sm8550.c, so CLK_OFF=1 on
  // an idle branch is normal (hardware 2026-10-17 read ahb=80000003).
 diff --git a/NativeUfs.cpp b/NativeUfs.cpp
-index bdf3df5..686379d 100644
+index bdf3df5..832f3a6 100644
 --- a/NativeUfs.cpp
 +++ b/NativeUfs.cpp
 @@ -3,7 +3,9 @@
@@ -103,7 +103,7 @@ index bdf3df5..686379d 100644
    // GDSCR bit31 PWR_ON; CBCR bit31 CLK_OFF.
    bool powered = (gdsc & 0x80000000U) != 0;
    // Hardware 2026-10-17: AXI running, AHB enabled but CLK_OFF (bit31). With bit1 (HW gating)
-@@ -278,7 +281,7 @@ static void zero32 (void *start, size_t length)
+@@ -278,14 +281,21 @@ static void zero32 (void *start, size_t length)
  // (arm_smmu_write_sme). ARM IHI 0062D.c table 3-1 additionally requires VA64=1
  // for inputs above 32 bits even with SCTLR.M=0. Storage DMA path only; this
  // is physical pass-through, not a page-table or Adreno 4 KiB qualification.
@@ -112,7 +112,21 @@ index bdf3df5..686379d 100644
                                uint64_t dma, uint64_t bytes)
  {
    uintptr_t smmu = mapPhys (0x15000000ULL, 0xd0000, keep);
-@@ -367,7 +370,7 @@ void NativeUfs::adoptAndRead (unsigned level)
+   if (!smmu) {
+     panic ("NATIVE_UFS smmu: map failed");
+   }
++#if defined(NATIVE_UFS_SM8250) && NATIVE_UFS_SM8250
++  // SM8250: the firmware's mapping of the host first (SmmuTakeover.h findFirmwareUfsMapping); allocate only without one.
++  UfsSmmuPlan plan = findFirmwareUfsMapping (stream, [smmu](unsigned offset) { return read32 (smmu, offset); });
++  if (plan.error)
++    plan = planUfsSmmu (stream, dma, bytes, [smmu](unsigned offset) { return read32 (smmu, offset); });
++#else
+   UfsSmmuPlan plan = planUfsSmmu (stream, dma, bytes, [smmu](unsigned offset) { return read32 (smmu, offset); });
++#endif
+   gRootDiagnostic.smmuId1 = read32 (smmu, 0x24);
+   gRootDiagnostic.smmuId2 = read32 (smmu, 0x28);
+   gRootDiagnostic.smmuSlot = plan.slot;
+@@ -367,7 +377,7 @@ void NativeUfs::adoptAndRead (unsigned level)
    unsigned stopLoops = 10000;
    while ((read32 (hc, 0x60) & 1) && stopLoops--) IODelay (10);
    if (read32 (hc, 0x60) & 1) panic ("NATIVE_UFS adopt: request list did not stop");
@@ -121,7 +135,7 @@ index bdf3df5..686379d 100644
    write32 (hc, 0x50, static_cast<uint32_t> (phys));
    write32 (hc, 0x54, static_cast<uint32_t> (phys >> 32));
    write32 (hc, 0x20, 0xffffffffU);  // clear stale status
-@@ -735,7 +738,7 @@ void NativeUfs::inspectSmmu (void)
+@@ -735,7 +745,7 @@ void NativeUfs::inspectSmmu (void)
        valid++;
        typeCount[(s2cr >> 16) & 3]++;
        uint32_t mask = (smr >> 16) & 0x7fff;
@@ -130,7 +144,7 @@ index bdf3df5..686379d 100644
          match = index;
          matchSmr = smr;
          matchS2cr = s2cr;
-@@ -745,9 +748,9 @@ void NativeUfs::inspectSmmu (void)
+@@ -745,9 +755,9 @@ void NativeUfs::inspectSmmu (void)
    panic ("NATIVE_UFS smmu\n"
           "scr0=%08x idr0=%08x idr1=%08x gfsr=%08x\n"
           "nsmr=%u valid=%u types t0=%u t1=%u t2=%u\n"
@@ -142,7 +156,7 @@ index bdf3df5..686379d 100644
  }
  
  // Read-only context-bank survey (native-ufs-probe=8): CBAR/CBA2R in gr1 and SCTLR/TTBR0 in the
-@@ -927,7 +930,7 @@ static bool hostBringUp (const char **why)
+@@ -927,7 +937,7 @@ static bool hostBringUp (const char **why)
    uint32_t report[3] = { 0, 0, 0 };
    gRootDiagnostic.stage = "SMMU and request list";
    if (!hostStopQueue (why)) return false;
@@ -151,7 +165,7 @@ index bdf3df5..686379d 100644
    gHost.smmu = gHost.smmuMap->getVirtualAddress ();
    uint32_t idr1 = read32 (gHost.smmu, 0x24);
    gHost.cb = gHost.smmu + ((1U << (((idr1 >> 28) & 7) + 1)) + (report[0] >> 16)) * 4096;
-@@ -989,8 +992,10 @@ static uint32_t be32w (const uint8_t *at)
+@@ -989,8 +999,10 @@ static uint32_t be32w (const uint8_t *at)
  }
  
  #include "RootLayout.h"
@@ -162,7 +176,7 @@ index bdf3df5..686379d 100644
  
  }
  
-@@ -1203,6 +1208,7 @@ extern "C" unsigned native_ufs_store_gpt_check (void)
+@@ -1203,6 +1215,7 @@ extern "C" unsigned native_ufs_store_gpt_check (void)
  // One read-only window of the root image as a block device: 512-byte sectors on top of 4096-byte
  // UFS blocks, so the unchanged dmg disk images (GPT with 512-byte sectors) parse as they do on
  // the virtio path.
@@ -170,7 +184,7 @@ index bdf3df5..686379d 100644
  class NativeUfsBlock : public IOBlockStorageDevice {
    OSDeclareDefaultStructors (NativeUfsBlock)
    uint64_t absolute = 0;      // byte offset of the window on LUN 0
-@@ -1248,6 +1254,7 @@ public:
+@@ -1248,6 +1261,7 @@ public:
    IOReturn doAsyncReadWrite (IOMemoryDescriptor *, UInt64, UInt64, IOStorageAttributes *, IOStorageCompletion *) override;
  };
  OSDefineMetaClassAndStructors (NativeUfsBlock, IOBlockStorageDevice)
@@ -178,7 +192,7 @@ index bdf3df5..686379d 100644
  
  extern "C" {
  volatile uint32_t native_ufs_blocks_published = 0;
-@@ -1283,6 +1290,7 @@ static void rootDiagnosticFailure (const char *reason)
+@@ -1283,6 +1297,7 @@ static void rootDiagnosticFailure (const char *reason)
    panic ("%s", gRootDiagnosticText);
  }
  
@@ -186,7 +200,7 @@ index bdf3df5..686379d 100644
  bool NativeUfsBlock::configure (const char *name, uint64_t absoluteOffset, uint64_t size)
  {
    if (!name || !ufsWindowGeometry (absoluteOffset, size)) {
-@@ -1651,6 +1659,8 @@ static void publishThread (void *, wait_result_t)
+@@ -1651,6 +1666,8 @@ static void publishThread (void *, wait_result_t)
    gPendingProvider->release ();  // Balanced with successful thread dispatch.
  }
  
@@ -195,7 +209,7 @@ index bdf3df5..686379d 100644
  // Memory snapshot (native-ufs-probe=13): root mode as usual, then, after a delay, the kernel's own
  // page counters on the panic screen. Observation only.
  extern "C" {
-@@ -1849,6 +1859,11 @@ bool NativeUfs::start (IOService *provider)
+@@ -1849,6 +1866,11 @@ bool NativeUfs::start (IOService *provider)
  // Boot the root image's windows as block devices. Soft-fails (logs, publishes nothing).
  bool NativeUfs::startRoot (IOService *provider)
  {
@@ -207,7 +221,7 @@ index bdf3df5..686379d 100644
    const char *why = "";
    native_ufs_root_step = 1;
    if (!hostBringUp (&why)) {
-@@ -1955,6 +1970,7 @@ bool NativeUfs::startRoot (IOService *provider)
+@@ -1955,6 +1977,7 @@ bool NativeUfs::startRoot (IOService *provider)
      return false;
    }
    return true;
@@ -216,10 +230,18 @@ index bdf3df5..686379d 100644
  
  void NativeUfs::stop (IOService *provider)
 diff --git a/SmmuTakeover.h b/SmmuTakeover.h
-index c30f5a9..c11582b 100644
+index c30f5a9..05b230a 100644
 --- a/SmmuTakeover.h
 +++ b/SmmuTakeover.h
-@@ -17,9 +17,11 @@ static unsigned ufsSmmuAddressBits(unsigned code)
+@@ -4,6 +4,7 @@ struct UfsSmmuPlan {
+   unsigned slot = 0xffffffffU, bank = 0, pages = 0;
+   uint32_t smr = 0, s2cr = 0;
+   bool reuse = false;
++  bool firmware = false;   // an entry the firmware left for the host, adopted without any SMMU write
+   const char *error = nullptr;
+ };
+ // ARM IHI 0062D.c sections 1.6 and 3.7: VA64=0 still rejects inputs above
+@@ -17,9 +18,11 @@ static unsigned ufsSmmuAddressBits(unsigned code)
      default: return 0;
    }
  }
@@ -232,7 +254,7 @@ index c30f5a9..c11582b 100644
  {
    UfsSmmuPlan p;
    uint32_t idr0 = read(0x20), idr2 = read(0x28);
-@@ -52,11 +54,12 @@ static UfsSmmuPlan planUfsSmmuBank(uint16_t stream, uint64_t dma, uint64_t bytes
+@@ -52,11 +55,12 @@ static UfsSmmuPlan planUfsSmmuBank(uint16_t stream, uint64_t dma, uint64_t bytes
      }
      uint32_t s2cr = read(0xc00 + 4 * i);
      uint32_t mask = (smr >> 16) & 0x7fff;
@@ -247,7 +269,7 @@ index c30f5a9..c11582b 100644
          p.slot = i; p.smr = smr; p.s2cr = s2cr;
          p.error = "conflicting UFS stream mapping"; return p;
        }
-@@ -80,7 +83,7 @@ static UfsSmmuPlan planUfsSmmuBank(uint16_t stream, uint64_t dma, uint64_t bytes
+@@ -80,7 +84,7 @@ static UfsSmmuPlan planUfsSmmuBank(uint16_t stream, uint64_t dma, uint64_t bytes
  // (no other valid stream maps it, translation off). Any other refusal (a conflicting mapping of our own stream, no free group, unsupported geometry)
  // is final and is reported as the first attempt saw it.
  template <class Read>
@@ -256,7 +278,43 @@ index c30f5a9..c11582b 100644
  {
    enum {kBankAttempts = 8};
    UfsSmmuPlan first = planUfsSmmuBank(stream, dma, bytes, read, 0);
-@@ -103,7 +106,7 @@ static UfsSmmuPlan planUfsSmmu(uint16_t stream, uint64_t dma, uint64_t bytes, Re
+@@ -99,13 +103,46 @@ static UfsSmmuPlan planUfsSmmu(uint16_t stream, uint64_t dma, uint64_t bytes, Re
+   return first;
+ }
+ 
++// A stream-match entry the firmware already left for one of the host's IDs. SM8250 (hardware 2026-10-22): XBL/UEFI leave
++// SMR 0x800004e0 -> S2CR 0x2 (translate, context bank 2), the mapping UEFI's own UFS driver used, and the downstream kona
++// kernel has no iommus on ufshc, so Linux DMAs through it unchanged. Adopting it writes nothing; a masked entry of our own
++// would overlap it (a stream match conflict). Only a translate- or bypass-type entry in the reliably accessible groups is
++// taken; none found returns an error and the caller allocates as usual.
++template <class Read>
++static UfsSmmuPlan findFirmwareUfsMapping(uint32_t stream, Read read)
++{
++  UfsSmmuPlan p;
++  uint32_t idr0 = read(0x20), idr1 = read(0x24);
++  unsigned count = idr0 & 255, banks = idr1 & 255;
++  if (count > 128) count = 128;
++  p.pages = 1U << (((idr1 >> 28) & 7) + 1);
++  if ((idr1 >> 31) || p.pages > 128 || !banks || banks > 128 || (p.pages + banks) * 4096 > 0xd0000) {
++    p.error = "unsupported SMMU geometry"; return p;
++  }
++  for (unsigned i = 0; i < count; ++i) {
++    uint32_t smr = read(0x800 + 4 * i);
++    if (!(smr & 0x80000000U)) continue;
++    uint32_t mask = (smr >> 16) & 0x7fff;
++    if (((smr ^ stream) & 0xffff & ~(mask | (stream >> 16))) != 0) continue;
++    uint32_t s2cr = read(0xc00 + 4 * i);
++    unsigned type = (s2cr >> 16) & 3, bank = s2cr & 255;
++    if (type > 1 || (type == 0 && bank >= banks)) continue;   // fault-type or out-of-range entries are not a working mapping
++    p.slot = i; p.bank = type == 0 ? bank : 0; p.smr = smr; p.s2cr = s2cr;
++    p.reuse = p.firmware = true;
++    return p;
++  }
++  p.error = "no firmware UFS stream mapping";
++  return p;
++}
++
+ // The caller must first quiesce the UFS queue. The planner refuses other
  // streams sharing this bank and enabled translation; no live context is
  // disabled here. Write callbacks must complete an MMIO barrier before return.
  template <class Read, class Write>
@@ -264,12 +322,15 @@ index c30f5a9..c11582b 100644
 +static const char *configureUfsSmmu(const UfsSmmuPlan &p, uint32_t stream, Read read, Write write)
  {
    if (p.error) return p.error;
++  if (p.firmware) return nullptr;   // the firmware's own entry and bank stay exactly as they are
    unsigned cb = (p.pages + p.bank) * 4096;
+   if (!p.reuse) write(cb, 0);
+   if (read(cb) != 0) return "SMMU bypass disable readback";
 diff --git a/tests/SmmuTakeover.cpp b/tests/SmmuTakeover.cpp
-index bc94443..ce4f9ba 100644
+index bc94443..693ce15 100644
 --- a/tests/SmmuTakeover.cpp
 +++ b/tests/SmmuTakeover.cpp
-@@ -86,5 +86,17 @@ int main()
+@@ -86,5 +86,31 @@ int main()
    reset(); p=plan(); drop=0xffffffffU; assert(!configure());
    r[(0x1800+4*p.bank)/4]=0x10001; p=plan(); assert(p.error);
    writes.clear(); assert(configure() && writes.empty());
@@ -284,6 +345,20 @@ index bc94443..ce4f9ba 100644
 +    reset(); r[0x800/4]=0x800000e0; r[0xc00/4]=69; assert(mplan().error);                       // same ID, other mask
 +    reset(); r[0x800/4]=0x800000e1; r[0xc00/4]=3; assert(!mplan().error);                       // distinct ID
 +    reset(); r[0x800/4]=0x840000e0; r[0xc00/4]=69; assert(plan().error==nullptr);               // 0x60 path unaffected
++  }
++  // SM8250 hardware 2026-10-22: the firmware maps SID 0x4e0 at slot 2 to context bank 2 (S2CR 0x2); adopted, never written.
++  {
++    const uint32_t masked=0x040000e0;
++    reset(); r[(0x800+4*2)/4]=0x800004e0; r[(0xc00+4*2)/4]=0x2;
++    auto f=findFirmwareUfsMapping(masked,read);
++    assert(!f.error && f.firmware && f.reuse && f.slot==2 && f.bank==2 && f.pages==128);
++    writes.clear(); assert(!configureUfsSmmu(f,masked,read,write) && writes.empty());
++    reset(); r[0x800/4]=0x800000e0; r[0xc00/4]=0x10000; f=findFirmwareUfsMapping(masked,read);   // bypass type
++    assert(!f.error && f.firmware && f.bank==0);
++    reset(); r[0x800/4]=0x800004e0; r[0xc00/4]=0x20000; assert(findFirmwareUfsMapping(masked,read).error);  // fault type
++    reset(); r[0x800/4]=0x800000e1; r[0xc00/4]=0x2; assert(findFirmwareUfsMapping(masked,read).error);     // other stream
++    reset(); r[0x800/4]=0x000004e0; r[0xc00/4]=0x2; assert(findFirmwareUfsMapping(masked,read).error);     // invalid entry
++    reset(); r[0x800/4]=0x800004e0; r[0xc00/4]=0xff; assert(findFirmwareUfsMapping(masked,read).error);    // bank out of range
 +  }
    puts("PASS: SMMU geometry/conflicts, VA64 high-DMA regression, full-range width limits, ordered configuration, reuse/repair and blocked-write refusal");
  }
