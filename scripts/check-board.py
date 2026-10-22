@@ -30,6 +30,7 @@ def read_node(blob, offset=0):
 
 def main():
     board = tomllib.loads((ROOT / 'board.toml').read_text())
+    assert 'sheng-smp=1' in board['payload']['kernel_args'], 'eight-core ADT requires ArmCpu secondary startup'
     with tempfile.TemporaryDirectory(prefix='instantnoodle-board-') as directory:
         work = Path(directory)
         binary = work / 'BoardTests'

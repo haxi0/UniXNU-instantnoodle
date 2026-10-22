@@ -166,6 +166,7 @@ kernel_args = [
   "debug=0x14e",
   "kt_fixed_zones=120",
   "armcpu-diagnostics=1",
+  "sheng-smp=1", # ArmCpu requires this gate for the eight CPU nubs in the ADT
   "sheng-pmgr=2",
   # Load the original graphics family, then the no-display board hook. Hardware
   # remains off until instantnoodle-touch/buttons/cpufreq/autoreset is set explicitly.
