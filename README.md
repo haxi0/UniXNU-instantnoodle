@@ -1,6 +1,6 @@
 # UniXNU-instantnoodle
 
-> **Work in progress.** The firmware reaches the UniXNU menu on the phone; XNU has not run yet.
+> **Work in progress.** The empty-ramdisk firmware reaches the UniXNU menu. Kernel entry on the phone remains unconfirmed.
 
 Device repository for the OnePlus 8 (instantnoodle, IN2010, SM8250), laid out like [UniXNU-sheng](https://github.com/UniXNU/UniXNU-sheng). It started as a fork of [UniXNU-pipa](https://github.com/xVanTuring/UniXNU-pipa) (Xiaomi Pad 6, the same SoC). Firmware: [uefi-instantnoodle](https://github.com/haxi0/uefi-instantnoodle), branch `instantnoodle`, a fork of [uefi-sheng](https://github.com/UniXNU/uefi-sheng).
 
@@ -10,8 +10,8 @@ Device repository for the OnePlus 8 (instantnoodle, IN2010, SM8250), laid out li
 | --- | --- |
 | 1. UEFI | works: `fastboot boot` of the header v1 image, the Mu-Silicium DEBUG log on the panel |
 | 2. UniXNU menu | works with an empty ramdisk (2026-10-22); with no entry it falls through to the Silicium boot manager, which resets to the bootloader |
-| 3. Payload | kernel built; boot-volume packaging and phone boot not tried |
-| 4–5. DarwinBoot, kernel entry | not tried |
+| 3. Payload | 203 MB boot image built and accepted by fastboot; payload discovery on the phone unconfirmed |
+| 4–5. DarwinBoot, kernel entry | RAM attempts show startup text then reset; last-frame evidence still needed |
 | 6. Storage and root | SM8250 probe build prepared; signed root and original storage ABI still required |
 
 ## What is here
@@ -82,6 +82,8 @@ fastboot boot out/instantnoodle/boot/boot.img
 
 The platform seed is any nonzero 64-bit value kept for this phone, for example from `openssl rand -hex 8`. It never goes into this repository.
 
+Current RAM attempts (2026-10-22): fastboot reports `Booting OKAY`, then the user sees startup text and a reboot. This does not distinguish UEFI output from XNU output. The payload menu timeout is now 30 seconds to expose the reset stage; its value was verified inside the FAT volume. No partition was flashed and the hardware-action flags remain off.
+
 Expected bring-up endpoint: DarwinBoot hands over and the kernel reaches `Failed to mount root device`. NativeUfs is compiled in probe-only mode and cannot publish a root device. This is preparation for hardware tests, not an iPadOS home-screen image.
 
 ## Values taken from the phone
@@ -103,7 +105,7 @@ Read under Android (OxygenOS 11) and recovery, 2026-10-21 and 2026-10-22.
 ## Known risks
 
 - **userdata.** The root image is written with `fastboot flash userdata`, which erases Android's data partition.
-- **ABL acceptance** of a large ramdisk in a header v1 image is unverified on this phone.
+- **Large ramdisk handover.** ABL accepts the 203 MB header-v1 image, but the payload has not reached a visible UniXNU menu on the phone.
 - **Vendor drivers.** kebab's vendor driver set runs as is; `AcpiPlatform.efi` fails to start (status 1) without visible effect so far.
 
 ## Prepared hardware support
@@ -152,7 +154,7 @@ On macOS, after selecting this device and installing QEMU:
 python3 out/instantnoodle/tree/scripts/qualify-kernel-abi.py
 ```
 
-The audit reports and raw observations are exported to `out/instantnoodle/kernel/abi/` for the kernel artifact. They qualify the original class layout, not physical storage, the panel, or successful iPadOS startup. `build-darwinboot-efi.py` builds the standalone loader QEMU needs; it respects `CLANG_BIN` on NixOS and saves its build log. EFI compilation and isolated ESP staging have passed locally; the runtime ABI checks still need a compiled kernel and macOS build records.
+The audit reports and raw observations are exported to `out/instantnoodle/kernel/abi/` for the kernel artifact. They qualify the original class layout, not physical storage, the panel, or successful iPadOS startup. `build-darwinboot-efi.py` builds the standalone loader QEMU needs; it respects `CLANG_BIN` on NixOS and saves its build log. EFI compilation and isolated ESP staging pass locally. The two-pass kernel also boots under local QEMU and passes the original framebuffer class audit (358 slots, 0x18a0 bytes, nine abstract leaves). Storage qualification still needs the macOS build records and its live QEMU check.
 
 To repeat the staging check on Linux after building the package and standalone DarwinBoot:
 

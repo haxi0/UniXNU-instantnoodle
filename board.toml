@@ -146,6 +146,7 @@ volume = "NOODLEESP"
 size_mib = 192
 loader = "firmware"
 title = "instantnoodle: source 4K XNU hardware bring-up"
+timeout = 30                     # Keep the entry/error visible during initial hardware bring-up.
 # 8 GB. The live tree's /memory has the banks 0x80000000+0x3bb00000, 0xc0000000+0xc0000000 and 0x180000000+0x100000000.
 # XNU takes dram-base and dram-size as one range (is_dram_addr, which only picks the attribute of device mappings), so it
 # spans from the base to the end of the last bank (0x280000000); every register block lies below 0x80000000.
