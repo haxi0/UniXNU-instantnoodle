@@ -47,6 +47,7 @@ archives = [
   "build-arm-driver.py ArmDTPlatform",
   "build-arm-driver.py ArmCpu",
   "build-arm-driver.py NativeAES",
+  "build-arm-driver.py NativeUfs --sm8250", # probe-only; --verified-root also requires an owner key and original storage ABI
   "build-native-aes-bindings.py",
   "build-libpthread-kernel.py",
   "build-link-stubs.py",
@@ -138,13 +139,13 @@ BUILDID_STRING = "instantnoodle-research"
 # The ramdisk of the boot image: a FAT volume with the UniXNU config, the kernel, its device tree and the optional
 # trust cache and Data seed. DarwinBoot is part of the firmware volume.
 #
-# The kernel is the one instantnoodle_defconfig builds. It has no storage, Data or display driver yet, so the expected
-# end is the root mount, with the kernel log on the frame buffer.
+# The kernel includes opt-in SM8250 storage probes and board hardware glue. It has
+# no root publication, Data or display backend yet, so it cannot start iPadOS.
 [payload]
 volume = "NOODLEESP"
 size_mib = 192
 loader = "firmware"
-title = "instantnoodle first boot: source 4K XNU to the panic screen"
+title = "instantnoodle: source 4K XNU hardware bring-up"
 # 8 GB. The live tree's /memory has the banks 0x80000000+0x3bb00000, 0xc0000000+0xc0000000 and 0x180000000+0x100000000.
 # XNU takes dram-base and dram-size as one range (is_dram_addr, which only picks the attribute of device mappings), so it
 # spans from the base to the end of the last bank (0x280000000); every register block lies below 0x80000000.
@@ -166,6 +167,10 @@ kernel_args = [
   "kt_fixed_zones=120",
   "armcpu-diagnostics=1",
   "sheng-pmgr=2",
+  # Load the original graphics family, then the no-display board hook. Hardware
+  # remains off until instantnoodle-touch/buttons/cpufreq/autoreset is set explicitly.
+  "offline-mobile-graphics-load=1",
+  "offline-legacy-register=1",
   "-no_slto_panic",
   "ml-timeout-lock-panic-scale=40",
 ]
@@ -177,7 +182,7 @@ chip_id = "8250"                     # software identity seed (with unique_chip_
 # 0xffc20000..0x27fffffff (6 GiB) free.
 owned_memory_size = "0x100000000"
 root_match_volume_uuid = "04769D26-2CA0-4825-B443-E2E5F88300F2"   # the OS volume of the same IPSW
-cpu_regs = "0"                       # the boot CPU only; all eight are 0,0x100,0x200,0x300,0x400,0x500,0x600,0x700
+cpu_regs = "0,0x100,0x200,0x300,0x400,0x500,0x600,0x700"
 packed_data_ramdisk = true
 ipad_identity = true
 unique_chip_id = "required"          # the platform seed is not stored in any repository

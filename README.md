@@ -12,17 +12,17 @@ Device repository for the OnePlus 8 (instantnoodle, IN2010, SM8250), laid out li
 | 2. UniXNU menu | works with an empty ramdisk (2026-10-22); with no entry it falls through to the Silicium boot manager, which resets to the bootloader |
 | 3. Payload | not tried: needs the kernel |
 | 4–5. DarwinBoot, kernel entry | not tried |
-| 6. Storage and root | needs NativeUfs for SM8250 |
+| 6. Storage and root | SM8250 probe build prepared; signed root and original storage ABI still required |
 
 ## What is here
 
 | File | Contents |
 | --- | --- |
 | `board.toml` | Board, IPSW, firmware, payload and ADT settings |
-| `configs/instantnoodle_defconfig` | Kernel configuration of the first image (pipa's) |
+| `configs/instantnoodle_defconfig` | Eight-core bring-up kernel with opt-in UFS probes and board hardware glue |
 | `scripts/make-instantnoodle-adt.py` | Apple device tree for SM8250: GICv3 0x17a00000/0x17a60000, stride 0x20000, Cortex-A55/A77 cores, 19.2 MHz timebase |
 | `scripts/check-instantnoodle.py` | Firmware preflight: UniXNU integration, FD and stack against the memory map, vendor inputs, splash region |
-| `scripts/build-arm-driver.py`, `scripts/build-platform-power.py`, `package/ShengPlatformPower.cpp`, `scripts/patch-xnu-entry-probe.py`, `scripts/xnu-panic-screen.c` | Copied unchanged from UniXNU-sheng through UniXNU-pipa |
+| `scripts/build-platform-power.py`, `package/ShengPlatformPower.cpp`, `scripts/patch-xnu-entry-probe.py`, `scripts/xnu-panic-screen.c` | Copied unchanged from UniXNU-sheng through UniXNU-pipa |
 
 pipa's ramoops log reader (`scripts/read-pipa-log.py`, `package/linux-log`) is not carried: it reads a pipa Linux kernel's pstore.
 
@@ -73,7 +73,7 @@ fastboot boot out/instantnoodle/boot/boot.img
 
 The platform seed is any nonzero 64-bit value kept for this phone, for example from `openssl rand -hex 8`. It never goes into this repository.
 
-Expected, as on pipa: DarwinBoot hands over, the entry probe bars appear at the top of the screen, and the panic screen shows `Failed to mount root device`, as there is no storage driver yet.
+Expected bring-up endpoint: DarwinBoot hands over and the kernel reaches `Failed to mount root device`. NativeUfs is compiled in probe-only mode and cannot publish a root device. This is preparation for hardware tests, not an iPadOS home-screen image.
 
 ## Values taken from the phone
 
@@ -97,13 +97,50 @@ Read under Android (OxygenOS 11) and recovery, 2026-10-21 and 2026-10-22.
 - **ABL acceptance** of a large ramdisk in a header v1 image is unverified on this phone.
 - **Vendor drivers.** kebab's vendor driver set runs as is; `AcpiPlatform.efi` fails to start (status 1) without visible effect so far.
 
-## Next steps
+## Prepared hardware support
 
-1. Kernel through the macOS build workflow, then the payload and stages 4–5.
-2. NativeUfs for SM8250: GCC offsets from `gcc-sm8250.c` in place of the SM8550 ones.
-3. Touch (S6SY761), keys (PM8150 PON and GPIO) and EPSS cpufreq as UniXNU drivers.
-4. GPU: Adreno 650 needs its own GMU, HFI and PM4 work.
+The sources below have host tests and a syntax check using older XNU 8796 headers. They have **not** been compiled against UniXNU's XNU 10063 or tested on the phone. Success in the earlier iOS ports does not establish success here.
+
+| Component | Preparation | Enable for a diagnostic run |
+| --- | --- | --- |
+| NativeUfs | SM8250 GCC registers, compatible string, SMMU IDs 0xe0/0x4e0 with mask 0x400 | `native-ufs-probe=2` reads registers and panics with a report; `=10` adopts the controller and reads GPT/userdata, without writing storage |
+| Touch | S6SY761 over GPIO36/37; reset GPIO38; RPMh ldoc1/ldoa13; publishes the full contact set in NativeHidInput coordinates | `instantnoodle-touch=1` |
+| Keys | PM8150 power, GPIO6/7 volume keys over SPMI v5; debounce and release after bus errors | `instantnoodle-buttons=1` |
+| CPU clocks | Three EPSS domains at 0x18591000; bounded LUT selection and disabled-domain refusal | `instantnoodle-cpufreq=1` |
+| Timed reset | IMEM bootloader reason at 0x146bf65c, followed by PSCI SYSTEM_RESET | `instantnoodle-autoreset=120` (30–3600 seconds after the board thread starts) |
+
+These flags are off by default. `offline-mobile-graphics-load=1 offline-legacy-register=1` in the board arguments invokes the board init hook after the original graphics family loads. Touch and key publication has no HID consumer until NativeHidInput and the display backend are linked. The current hook does not create a display service.
+
+The reset timer needs a running kernel thread. It cannot recover a hard hang. It writes only the volatile IMEM restart word. Persistent boot logging and Data persistence are not enabled; no write window on userdata is opened by this configuration.
+
+`package/NativeUfs-sm8250.patch` is applied to a build-directory copy of UniXNU/NativeUfs at `af785c1777161a62931425c2faaa536ce0bebd5b`. Hashes of the four affected inputs are checked before staging. The upstream submodule remains unchanged. This makes the port reproducible without an unpublished NativeUfs fork or an absolute local path.
+
+The probe build excludes the original block-device subclass. A full root build must remove probe-only mode, qualify the original IOStorageFamily ABI, link the verified block transport and owner crypto/key archive, and supply owner-signed OS/SystemOS policies. No audit records or root keys are fabricated by this port.
+
+## Host checks
+
+Run from this device repository, with a C and C++ compiler plus Python 3.11+ and `patch`:
+
+```sh
+python3 scripts/check-board.py
+python3 scripts/check-storage.py ../unixnu/drivers/NativeUfs
+```
+
+`CC` and `CXX` override the host compilers. The storage checks stage the patch in a temporary directory, test SMMU conflicts/reuse, both SoC constants, root publication ordering and UFS completion handling, and refuse a changed patch base. The board checks test contact decoding and bounds, key masks, EPSS tables, malformed command databases, and the generated eight-core ADT. Neither script accesses the phone.
+
+## Remaining gates
+
+1. Compile the prepared archives on the macOS runner. The archive builders are now enabled with `CONFIG_XNU_BUILD_ARCHIVES=y`.
+2. Run the kernel build twice before a phone test: `build-platform-power.py` requires the first prelinked kernel to bind the real PMGR bridge. The first-pass bridge is only a build stub.
+3. Qualify the original storage ABI and prepare owner keys, signed OS/SystemOS policies and a Data seed. The published tb128fu board references unpublished ABI/key inputs; it is a source reference, not a reproducible ready-made build.
+4. Build the CPU display backend and NativeHidInput against this kernel. Reuse the platform archive's touch state and call `instantnoodle_platform_init()` from the real display init, replacing the no-display hook.
+5. Test storage probes, input, clocks and reset in stages, then prepare the userdata image. Flashing and persistent logging require explicit approval.
+6. Adreno 650, QCA6390 PCIe/MHI Wi-Fi, Bluetooth, battery/charging and audio remain unported. Audio was explicitly deferred.
 
 ## Credits and license
 
-BSD-2-Clause-Patent. See [LICENSE](LICENSE). Forked from UniXNU-pipa by xVanTuring; `make-instantnoodle-adt.py` is derived from its `make-pipa-adt.py`, itself derived from `make-sheng-adt.py` of UniXNU-sheng. `build-arm-driver.py` and the two panic-screen files are copies from UniXNU-sheng. `ShengPlatformPower.cpp` comes from it under MIT (its SPDX header). The firmware port is Mu-Silicium's `kebabPkg`.
+Unless a file says otherwise, BSD-2-Clause-Patent; see [LICENSE](LICENSE). Forked from UniXNU-pipa by xVanTuring; `make-instantnoodle-adt.py` is derived from its `make-pipa-adt.py`, itself derived from `make-sheng-adt.py` of UniXNU-sheng. `build-arm-driver.py` originated in UniXNU-sheng and now stages the SM8250 UFS variant. The two panic-screen files are unchanged copies. `ShengPlatformPower.cpp` comes from it under MIT (its SPDX header). The firmware port is Mu-Silicium's `kebabPkg`.
+
+The adapted touch, EPSS and SPMI code credits **OOSEX GANG / HackiOS**, [hackios-xnu-kernel](https://github.com/oosexgang/hackios-xnu-kernel), and the [haxi0 instantnoodle work](https://github.com/haxi0/hackios-xnu-kernel/commit/ce8ef8ff007e9ac42029973e594484bf7270d413). Their original kernel repository carries APSL 2.0; adapted files retain that license, included at [package/licenses/APSL-2.0.txt](package/licenses/APSL-2.0.txt). Touch also derives from [ios-sweet](https://github.com/dipa-studio/ios-sweet) and [ios-guacamole](https://github.com/wochgn/ios-guacamole). The port uses UniXNU's boot chain and interfaces; it does not depend on a HackiOS checkout or loader.
+
+`TouchState.c` follows the BSD-licensed UniXNU-qemu/UniXNU-tb128fu publication interface. Register facts were cross-checked against Linux [gcc-sm8250.c](https://github.com/torvalds/linux/blob/master/drivers/clk/qcom/gcc-sm8250.c), [sm8250.dtsi](https://github.com/torvalds/linux/blob/master/arch/arm64/boot/dts/qcom/sm8250.dtsi), and the captured OnePlus 8 device tree.

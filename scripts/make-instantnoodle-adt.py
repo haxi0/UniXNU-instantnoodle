@@ -189,7 +189,7 @@ def main():
                                                 GIC_REDIST - ARMIO_BASE, GIC_REDIST_SIZE)),
                             ('redistributor-stride', struct.pack('<Q', GIC_REDIST_STRIDE))]),
               # UFS (0x1d84000) lies below the arm-io window, so the node carries no reg. It exists for
-              # class matching only; no UFS driver for SM8250 exists yet.
+              # class matching; the SM8250 NativeUfs probe maps its own physical windows.
               node('ufshc', [('compatible', b'qcom,sm8250-ufshc\0')])]),
     ])
     args.output.parent.mkdir(parents=True, exist_ok=True)
